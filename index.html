@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#173b63" />
+  <meta name="description" content="Интерактивный прототип самостоятельной регистрации на исследования Аллергопроба для телефона и планшета." />
+  <title>Аллергопроба — самостоятельная запись</title>
+  <link rel="icon" type="image/png" href="assets/clinic-emblem.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="app.js" defer></script>
+</head>
+<body data-flow="studies">
+  <div class="app-shell" id="app">
+    <header class="topbar">
+      <div class="brand" aria-label="Аллергопроба">
+        <img class="brand-logo" src="assets/clinic-emblem.png" alt="Логотип Республиканского центра клинико-лабораторных исследований" />
+        <div class="brand-copy">
+          <span class="brand-primary">Allergoproba</span>
+          <span class="brand-secondary">РЦКЛИ</span>
+        </div>
+      </div>
+      <nav class="language-switch" id="languageSwitch" aria-label="Выбор языка">
+        <button type="button" class="language active" data-lang="ru" aria-pressed="true">RU</button>
+        <button type="button" class="language" data-lang="kz" aria-pressed="false">KZ</button>
+        <button type="button" class="language" data-lang="en" aria-pressed="false">EN</button>
+      </nav>
+    </header>
+    <div id="progressMount"></div>
+    <main id="screen" class="screen" aria-live="polite"></main>
+    <footer class="powered-footer" aria-label="Партнёрская информация">
+      <div class="powered-copy">
+        <span class="powered-eyebrow">Powered by</span>
+        <img class="powered-logo" src="assets/vivacell-logo.png" alt="Vivacell" />
+      </div>
+    </footer>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </div>
+  <div id="modalMount"></div>
+</body>
+</html>
