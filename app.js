@@ -231,8 +231,43 @@ const tr=()=>ui[state.lang];
 const childMode=()=>state.subject==='child';
 const sequence=()=>stepsFor(state.subject);
 function demoRecord(key) { return DEMO_RPN[key==='representative'?'representative':childMode()?'child':'representative']; }
-function phoneDigits(value) { let d=String(value||'').replace(/\D/g,''); if(d.length>=11&&'78'.includes(d[0])) d=d.slice(1); return d.slice(0,10); }
-function prettyPhone(value) { const d=phoneDigits(value);return d?`+7 ${d.slice(0,3)}${d.length>3?' '+d.slice(3,6):''}${d.length>6?' '+d.slice(6,8):''}${d.length>8?' '+d.slice(8,10):''}`:''; }
+// The state stores ONLY the ten national digits. The visual '+7 ' is a fixed
+// country-code prefix and must NEVER be parsed back into the national number.
+// Previously we stripped that prefix only once the text reached 11 digits,
+// which caused an extra '7' to accumulate with each keypress.
+function phoneDigits(input) {
+  const raw = String(input ?? '').trim();
+  let digits = raw.replace(/\D/g, '');
+  if (raw.startsWith('+7')) {
+    digits = digits.slice(1); // remove the display prefix even for a partial number
+  } else if (digits.length === 11 && (digits[0] === '7' || digits[0] === '8')) {
+    digits = digits.slice(1); // support pasted 7701... and 8701... numbers
+  }
+  return digits.slice(0, 10);
+}
+function prettyPhone(nationalDigits) {
+  // No phoneDigits() here: this argument is already normalized local digits.
+  const d = String(nationalDigits ?? '').replace(/\D/g, '').slice(0, 10);
+  const parts = [d.slice(0,3), d.slice(3,6), d.slice(6,8), d.slice(8,10)].filter(Boolean);
+  return `+7 ${parts.join(' ')}`;
+}
+function phoneCaretAfterDigits(formatted, count) {
+  if (count <= 0) return 3; // do not place the cursor inside '+7 '
+  let seen = 0;
+  for (let i = 3; i < formatted.length; i++) {
+    if (/\d/.test(formatted[i]) && ++seen >= count) return i + 1;
+  }
+  return formatted.length;
+}
+function handlePhoneInput(el) {
+  const beforeCaret = el.value.slice(0, el.selectionStart ?? el.value.length);
+  const localCountBeforeCaret = phoneDigits(beforeCaret).length;
+  state.phone = phoneDigits(el.value);
+  const formatted = prettyPhone(state.phone);
+  el.value = formatted;
+  const caret = phoneCaretAfterDigits(formatted, Math.min(localCountBeforeCaret, state.phone.length));
+  el.setSelectionRange?.(caret, caret);
+}
 function isValidDob(value) { if(!/^\d{2}\.\d{2}\.\d{4}$/.test(value))return false;const [dd,mm,yyyy]=value.split('.').map(Number);const date=new Date(Date.UTC(yyyy,mm-1,dd));return date.getUTCFullYear()===yyyy&&date.getUTCMonth()===mm-1&&date.getUTCDate()===dd&&date<=new Date()&&yyyy>=1900; }
 function resetIdle() { clearTimeout(idleTimeout);if(state.step==='welcome')return; idleTimeout=setTimeout(()=>{const lang=state.lang;clearTimeout(lookupTimeout);state=fresh(lang);render();warn(tr().idle);},10*60*1000); }
 ['pointerdown','keydown','input','change','click','scroll'].forEach(evt=>document.addEventListener(evt,resetIdle,{passive:true}));
@@ -463,7 +498,7 @@ document.addEventListener('click',e=>{
 });
 screen.addEventListener('input',e=>{
  const el=e.target;if(el.id==='allergenSearch' && FLOW_MODE==='allergens'){state.allergenQuery=el.value;refreshAllergenPicker();}
- else if(el.id==='phone'){state.phone=phoneDigits(el.value);el.value=prettyPhone(state.phone);}
+ else if(el.id==='phone'){handlePhoneInput(el);}
  else if(['representativeIin','patientIin'].includes(el.id)){const key=el.id.startsWith('representative')?'representative':'patient';const digits=el.value.replace(/\D/g,'').slice(0,12);el.value=digits;autoLookup(key,digits);}
  else if(['representativeName','patientName','representativeDob','patientDob'].includes(el.id)){const key=el.id.startsWith('representative')?'representative':'patient';state.people[key][el.id.endsWith('Name')?'name':'dob']=el.value;state.people[key].confirmed=false;}
  else if(el.matches('[data-detail]'))state.details[el.dataset.detail]=el.value;
@@ -476,5 +511,30 @@ screen.addEventListener('change',e=>{
  if(el.id==='consentCheckbox')state.consent=el.checked;
  if(el.matches('[data-question]')){const q=Number(el.dataset.question);state.checks[q]=el.checked;const detail=document.getElementById(`healthDetail-${q}`);if(detail){detail.classList.toggle('hidden',!el.checked);if(el.checked)detail.querySelector('textarea')?.focus({preventScroll:true});}if(q===11){const note=screen.querySelector('.soft-warning');if(note)note.style.display=el.checked?'none':'flex';}}
 });
-document.addEventListener('keydown',e=>{if(e.key==='Enter'&&['phone','representativeIin','patientIin'].includes(e.target.id)){e.preventDefault();goNext();}});
+document.addEventListener('keydown',e=>{
+ if(e.key==='Enter'&&['phone','representativeIin','patientIin'].includes(e.target.id)){
+  e.preventDefault();goNext();return;
+ }
+ if(e.target.id==='phone' && e.key==='Backspace' && !e.ctrlKey && !e.metaKey){
+  const el=e.target, at=el.selectionStart ?? 0, end=el.selectionEnd ?? at;
+  if(at===end && at<=3){e.preventDefault();return;}
+  if(at===end && el.value[at-1]===' ' && at>3){
+   // Treat a formatting space as part of the preceding national digit.
+   let i=at-2;
+   while(i>=3 && !/\d/.test(el.value[i]))i--;
+   if(i>=3){
+    e.preventDefault();
+    const countBefore=phoneDigits(el.value.slice(0,i)).length;
+    state.phone=phoneDigits(el.value.slice(0,i)+el.value.slice(i+1));
+    el.value=prettyPhone(state.phone);
+    const caret=phoneCaretAfterDigits(el.value,countBefore);
+    el.setSelectionRange(caret,caret);
+   }
+  }
+ }
+});
+screen.addEventListener('click',e=>{
+ const el=e.target;
+ if(el.id==='phone' && el.selectionStart===el.selectionEnd && el.selectionStart<3) el.setSelectionRange(3,3);
+});
 render();
